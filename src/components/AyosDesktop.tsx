@@ -18,7 +18,7 @@ import CodeEditor from "@/components/apps/CodeEditor";
 import PayloadStudio from "@/components/apps/PayloadStudio";
 import PacketViewer from "@/components/apps/PacketViewer";
 import HashCracker from "@/components/apps/HashCracker";
-import { askVoidMindAction } from "@/app/actions";
+import { askVoidMindAction, askVoidMindUncensoredAction } from "@/app/actions";
 
 type FileSystemNode = {
   type: "file" | "dir";
@@ -75,6 +75,7 @@ export default function AyosDesktop() {
   const [command, setCommand] = useState("");
   const [fs, setFs] = useState<FileSystem>(initialFs);
   const [currentPath, setCurrentPath] = useState("/home/user");
+  const [isUncensoredMode, setIsUncensoredMode] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -128,7 +129,7 @@ export default function AyosDesktop() {
   const processCommand = async (cmd: string) => {
     const [action, ...args] = cmd.trim().split(" ");
     const newHistory = [...history, (
-      <div className="flex gap-2">
+      <div key={`cmd-${Date.now()}`} className="flex gap-2">
         <span className="font-code terminal-prompt-text">root@ayos:~{currentPath}$</span>
         <span className="font-code terminal-text flex-1">{cmd}</span>
       </div>
@@ -152,6 +153,7 @@ export default function AyosDesktop() {
               <span className="text-primary">packets</span><span>Open Packet Viewer</span>
               <span className="text-primary">cracker</span><span>Open Hash Cracker</span>
               <span className="text-primary">voidmind</span><span>Ask the AI assistant</span>
+              {isUncensoredMode && <><span className="text-primary">voidmind-un</span><span>Ask the uncensored AI</span></>}
             </div>
           </div>
         );
@@ -206,6 +208,10 @@ export default function AyosDesktop() {
       
       case "cat":
         const filePath = args[0];
+        if (!filePath) {
+            output = <span className="font-code text-red-500">cat: missing file operand</span>;
+            break;
+        }
         const fileNode = resolvePath(filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`);
         if(fileNode && fileNode.type === 'file') {
           output = <pre className="font-code terminal-text whitespace-pre-wrap">{fileNode.content}</pre>;
@@ -236,11 +242,14 @@ export default function AyosDesktop() {
       
       case "voidmind":
         const query = args.join(' ');
-        if (!query) {
+        if (query === 'enter uncensored mode') {
+            setIsUncensoredMode(true);
+            output = <div className="font-code text-red-500">Uncensored mode activated. Use 'voidmind-un [question]' to ask unrestricted questions.</div>;
+        } else if (!query) {
           output = <span className="font-code text-red-500">Usage: voidmind [your question]</span>
         } else {
           setHistory([...newHistory, (
-            <div className="flex items-center gap-2 font-code terminal-text">
+            <div key={`loader-${Date.now()}`} className="flex items-center gap-2 font-code terminal-text">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Contacting VoidMind...</span>
             </div>
@@ -253,6 +262,29 @@ export default function AyosDesktop() {
         }
         break;
 
+      case "voidmind-un":
+        if (!isUncensoredMode) {
+            output = <span className="font-code text-red-500">Uncensored mode is not active. Run 'voidmind enter uncensored mode' first.</span>;
+            break;
+        }
+        const unQuery = args.join(' ');
+        if (!unQuery) {
+            output = <span className="font-code text-red-500">Usage: voidmind-un [your question]</span>
+        } else {
+            setHistory([...newHistory, (
+              <div key={`loader-un-${Date.now()}`} className="flex items-center gap-2 font-code text-red-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Contacting Uncensored VoidMind...</span>
+              </div>
+            )]);
+            const result = await askVoidMindUncensoredAction(unQuery);
+            output = <div className="font-code terminal-text space-y-2">
+              <div className="text-red-500 font-bold">VoidMind (Uncensored) Response:</div>
+              <p>{result}</p>
+            </div>
+        }
+        break;
+
       default:
         output = <span className="font-code text-red-500">command not found: {action}. Type 'help' for a list of commands.</span>;
     }
@@ -262,6 +294,7 @@ export default function AyosDesktop() {
 
   const handleCommandSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (command.trim() === "") return;
     processCommand(command);
     setCommand("");
   };
@@ -323,3 +356,5 @@ export default function AyosDesktop() {
     </div>
   );
 }
+
+    
